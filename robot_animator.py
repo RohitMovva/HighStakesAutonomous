@@ -164,6 +164,6 @@ def animate(i):
 
 # Create animation
 anim = FuncAnimation(fig, animate, init_func=init, frames=len(actual_x),
-                    interval=25, blit=True, repeat=False)
+                    interval=10, blit=True, repeat=False)
 
 plt.show()

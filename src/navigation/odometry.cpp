@@ -45,8 +45,8 @@ Odometry::Odometry(pros::MotorGroup& left, pros::MotorGroup& right,
     , rightDrive(right)
     , lateralEncoder(lateral)
     , imu(imuSensor)
-    , leftVelocityLimiter(100, 100)
-    , rightVelocityLimiter(100, 100)
+    , leftVelocityLimiter(200, 200)
+    , rightVelocityLimiter(200, 200)
     , headingFilter() // 0.8
     , useHeadingFilter(enable_heading_filter)
     , useVelocityFilters(enable_velocity_filters)
@@ -138,7 +138,7 @@ void Odometry::reset() {
 void Odometry::update() {
     double currentTime = pros::millis() / 1000.0;
     double deltaTime = currentTime - lastUpdateTime;
-    deltaTime = 0.025;
+    deltaTime = 0.01;
     
     // if (lastUpdateTime == 0.0) {
     //     lastUpdateTime = currentTime;
@@ -162,7 +162,6 @@ void Odometry::update() {
     Logger::getInstance()->log("IMU Heading: %f", imu.get_heading()*-1);
     Logger::getInstance()->log("Heading: %f", filteredHeading);
     
-    // double deltaTheta = angleDifference(filteredHeading, currentPose.theta);
     double deltaTheta = filteredHeading;
     
     // Get and validate encoder readings
@@ -172,7 +171,6 @@ void Odometry::update() {
     pros::lcd::print(5, "Lateral Pos: %f", lateralPos);
 
     lateralPos = 0;
-    // Left drive info
     Logger::getInstance()->log("Left Positions: %f %f %f", leftDrive.get_position_all()[0], leftDrive.get_position_all()[1], leftDrive.get_position_all()[2]);
     Logger::getInstance()->log("Right Positions: %f %f %f", rightDrive.get_position_all()[0], rightDrive.get_position_all()[1], rightDrive.get_position_all()[2]);
 
@@ -208,9 +206,8 @@ void Odometry::update() {
     double forwardDisplacement = (deltaLeft + deltaRight) / 2.0;
     Logger::getInstance()->log("Forward displacement: %f", forwardDisplacement);
 
-    // Log the delta theta
     Logger::getInstance()->log("Delta theta: %f", deltaTheta);
-    // Log delta time
+
     // Local position update
     double deltaX, deltaY;
     
@@ -365,8 +362,8 @@ Odometry::DebugInfo Odometry::getDebugInfo() {
     return {
         leftVelocity.linear,
         rightVelocity.linear,
-        leftVelocityLimiter.calculate(leftVelocity.linear, 0.025),
-        rightVelocityLimiter.calculate(rightVelocity.linear, 0.025),
+        leftVelocityLimiter.calculate(leftVelocity.linear, 0.01),
+        rightVelocityLimiter.calculate(rightVelocity.linear, 0.01),
         degreesToRadians(imu.get_heading()*-1),
         currentPose.theta,
         positionFilter.getState(),

@@ -4,12 +4,6 @@
 #include "pros/rotation.hpp"
 #include "filters/slew_rate_limiter.h"
 
-// TODO test straight line
-// TODO test right curve and left curves (and compare them)
-
-// TODO test odometry by driving
-// TODO test with and without RAMSETE and compare performance
-
 
 class Vector2 {
 public:
@@ -46,7 +40,7 @@ private:
         0.0,
         -34.0 + 9.00,    // ~53.3 degrees at motor
         -200.5,    // ~586.7 degrees at motor
-        -160.0 + 10,    // Descore position
+        -155,    // Descore position
         0.0, // Placeholder for manual control
     };
     
@@ -62,11 +56,11 @@ private:
 
         double cp = current_pos;
         
-        // while (cp > 180) cp -= 360;
-        // while (cp < -180) cp += 360;
+        while (cp > 180) cp -= 360;
+        while (cp < -180) cp += 360;
         pros::lcd::print(2, "Current pos: %f", cp);
 
-        if (cp > -270 && cp < -180 && std::abs(error) > 50.0){
+        if ((cp > 90 && cp < 181) && std::abs(error) > 15.0 && error < 0 && target_pos > -150){
             error += 360.0;
         }
         
@@ -100,9 +94,6 @@ public:
         lift_motor.set_encoder_units(pros::E_MOTOR_ENCODER_DEGREES);
         lift_motor.tare_position();
         rot_sensor.reset();
-
-
-
     }
     
     void setState(int new_state) {
@@ -214,15 +205,15 @@ std::string program_type = "autonomous";
 // std::string program_type = "calibrate_metrics";
 
 // Routes
-std::vector<std::vector<double>> route = skills; // used to be skills
-// std::vector<std::vector<double>> route = {}; // Driver or Calibration
+std::vector<std::vector<double>> route;
+std::string route_name = "test2"; // used to be skills
 
 // Robot parameters (needs to be tweaked later)
 const float WHEEL_DIAMETER = 2.75;  // Diameter of the wheels in inches
 const float TICKS_PER_ROTATION = 300.0;  // Encoder ticks per wheel rotation for blue cartridges
 const float GEAR_RATIO = 36.0/48.0;  // Gear ratio of the drivetrain
-const double WHEEL_BASE_WIDTH = 12.7;  // Distance between the left and right wheels in inches
-const float DT = 0.025;  // Time step in seconds (25 ms)
+const double WHEEL_BASE_WIDTH = 14.1966209238;  // Distance between the left and right wheels in inches
+const float DT = 0.01;  // 10ms in seconds
 
 // PID Code
 // PID parameters (need to be tuned, especially heading)
@@ -273,17 +264,17 @@ public:
         float error = setpoint - current_value;
         if (headingCentered){
 
-            if (error < -180.0){
+            while (error < -180.0){
                 error += 360.0;
             }
-            if (error > 180.0){
+            while (error > 180.0){
                 error -= 360.0;
             }
         }
-        if (current_value < 180.0){
-            error -= 360.0;
-        }
-        // if (error > )
+        // while (current_value < 180.0){
+        //     error -= 360.0;
+        // }
+
         integral += error * dt;
         if (integral > 5){ // Anti integral wind up, may need tweaking
             integral = 0;
@@ -304,6 +295,49 @@ public:
     float previous_error;
 };
 
+
+void PIDTurn(double turn_val){
+    double kp = 2.0;
+    double ki = 0.0;
+    double kd = 0.1;
+    PIDController turn_pid(kp, ki, kd);
+    double current_heading = imu_sensor.get_heading();
+    double target_heading = current_heading + turn_val;
+    left_mg.tare_position_all();
+    right_mg.tare_position_all();
+    while (true){ // fabs(current_heading - target_heading) > 1.0
+        current_heading = imu_sensor.get_heading();
+        pros::lcd::print(0, "Current heading: %f", current_heading);
+        pros::lcd::print(1, "Target heading: %f", target_heading);
+        double error = (current_heading - target_heading);
+        if (error < -180.0){
+            error += 360.0;
+        }
+        if (error > 180.0){
+            error -= 360.0;
+        }
+        pros::lcd::print(2, "Error: %f", error);
+        double output = turn_pid.compute(target_heading, current_heading, DT, true);
+        pros::lcd::print(3, "Output: %f", output);
+        left_mg.move(output);
+        right_mg.move(-output);
+
+        std::vector<double> left_positions = left_mg.get_position_all();
+        std::vector<double> right_positions = right_mg.get_position_all();
+
+        double left_pos = (left_positions[0] + left_positions[1] + left_positions[2]) / 3.0;
+        double right_pos = (right_positions[0] + right_positions[1] + right_positions[2]) / 3.0;
+
+        // Convert ticks to inches
+        left_pos = ticksToInches(left_pos);
+        right_pos = ticksToInches(right_pos);
+
+        pros::lcd::print(4, "Left pos: %f, Right pos: %f", left_pos, right_pos);
+        pros::lcd::print(5, "Avg pos: %f", (fabs(left_pos) + fabs(right_pos)) / 2.0);
+
+        pros::delay(10);
+    }
+}
 
 PIDController x_pid(kp_position, ki_position, kd_position);
 PIDController y_pid(kp_position, ki_position, kd_position);
@@ -413,10 +447,10 @@ void color_motor_control(const char* target_color, ColorDetectionManager* manage
 
     int i = 0;
     
+    optical_sensor.set_integration_time(20.0);
+    optical_sensor.set_led_pwm(100);
     while (true) {
         i++;
-        optical_sensor.set_integration_time(20.0);
-        optical_sensor.set_led_pwm(100);
         // pros::lcd::print(5, "Integration time: %f", optical_sensor.get_integration_time());
         // pros::lcd::print(6, "LED PWM: %d", optical_sensor.get_led_pwm());
         
@@ -442,13 +476,13 @@ void color_motor_control(const char* target_color, ColorDetectionManager* manage
         // pros::lcd::print(3, "Color detected: %d", color_detected);
         
         if (color_detected) {
-            pros::delay(245);
+            pros::delay(165);
             
             // Use setter method instead of direct access
             manager->set_color_sorting(true);
             
             upper_intake.move_voltage(-1000);
-            pros::delay(100);
+            pros::delay(140);
             
             upper_intake.move_voltage(12000);
             
@@ -463,6 +497,45 @@ void color_motor_control(const char* target_color, ColorDetectionManager* manage
 }    
 
 ColorDetectionManager color_manager;
+
+std::vector<std::vector<double>> readRouteFile(const std::string& filename) {
+    std::vector<std::vector<double>> routeData;
+    
+    // Construct the full file path
+    std::string filePath = "/usd/routes/" + filename + ".txt";
+    
+    // Open the file
+    std::ifstream file(filePath.c_str());
+    
+    // Check if the file was successfully opened
+    if (!file.is_open()) {
+        pros::lcd::print(0, "Error: Could not open file %s", filePath.c_str());
+        return routeData; // Return empty vector if file cannot be opened
+    }
+    
+    // Read the file line by line
+    std::string line;
+    while (std::getline(file, line)) {
+        std::vector<double> row;
+        std::istringstream lineStream(line);
+        
+        // Parse each number in the line
+        double value;
+        while (lineStream >> value) {
+            row.push_back(value);
+        }
+        
+        // Add the row to the route data if it's not empty
+        if (!row.empty()) {
+            routeData.push_back(row);
+        }
+    }
+    
+    // Close the file
+    file.close();
+    
+    return routeData;
+}
 
 /**
  * @brief Follow a 2D motion profile using RAMSETE and drivetrain controllers
@@ -483,17 +556,21 @@ bool followTrajectory(const std::vector<std::vector<double>>& route,
                      pros::MotorGroup& left_mg,
                      pros::MotorGroup& right_mg,
                      int timeout = 1e9) { // Not using timeout for now
+                        //analyaze speedomoter - Henry G. Fitzgerald (this is my contribution to world saving project)
+
+                    
     
     if (route.empty()) return false;
+    // lady_brown.setState(1);
+    // pros::delay(2000);
     logger->log("Following trajectory");
     std::cout << "Following trajectory" << std::endl;
     // pros::delay(2000);
     // left_mg.getveloc
     
     const double START_TIME = pros::millis();
-    const double DT = 25;  // 25ms fixed timestep matching motion profile
-    // TODO retune track width
-    const double track_width = 13.5; // inches
+    const double DT = 10;  // 10ms
+    const double track_width = 14.1966209238; // inches
 
     lady_brown.setState(route[0][6]);
     size_t trajectory_index = 0;
@@ -548,19 +625,16 @@ bool followTrajectory(const std::vector<std::vector<double>>& route,
         Pose current_pose = odometry.getPose();
         pros::lcd::print(1, "Current pose: %f %f %f", current_pose.x, current_pose.y, current_pose.theta);
         // logger->log("Got pose");
-        auto velocities = odometry.getFilteredVelocities();
+        // auto velocities = odometry.getFilteredVelocities();
         // logger->log("Velocities: %f %f", velocities.first, velocities.second);
         
         // Check if the current waypoint is a node instead of a trajectory point
         while (trajectory_index < route.size() && route[trajectory_index][0] == 1) {
             // Handle node
             const auto& node = route[trajectory_index];
-            
-            // Move intake (value is either -1, 0, or 1)
-            if (node[1] == 1){
+            if (node[1] == 1) {
                 intake.move(127);
-            } else if (node[1] == -1){
-                // pros::Motor 
+            } else if (node[1] == -1) {
                 lower_intake.move(127);
                 upper_intake.move(0);
             } else {
@@ -568,27 +642,17 @@ bool followTrajectory(const std::vector<std::vector<double>>& route,
             }
 
             // Toggle clamp state
-            if (node[2]){
+            if (node[2]) {
                 clamp_state = !clamp_state;
                 mogo_mech.set_value(clamp_state);
             }
 
-            lady_brown.setState(node[6]);
-
-            if (node[3]){
+            if (node[3]) {
                 doinker_state = !doinker_state;
                 doinker.set_value(doinker_state);
             }
-            // Doinker prolly
 
-            // Lady brown
-
-            // Color sort maybe
-
-            // Toggle reverse
-            // if (node[2] == 1){
-            //     reversed = !reversed;
-            // }
+            lady_brown.setState(node[4]);
 
             trajectory_index++;
         }
@@ -653,7 +717,7 @@ bool followTrajectory(const std::vector<std::vector<double>>& route,
         );
         logger->log("Ramsete Output: %f %f", ramsete_output[0], ramsete_output[1]);
         logger->log("MP Output: %f %f", goal_v, goal_w);
-        velocities = odometry.getFilteredVelocities();
+        // velocities = odometry.getFilteredVelocities();
         
         // Convert RAMSETE output to wheel velocities
         auto wheel_velocities = ramsete.calculate_wheel_velocities(
@@ -843,7 +907,7 @@ void initialize() {
 	left_mg.set_encoder_units_all(pros::E_MOTOR_ENCODER_COUNTS);
 	right_mg.set_encoder_units_all(pros::E_MOTOR_ENCODER_COUNTS);
 
-    color_manager.start("blue");
+    color_manager.start("red");
 
 
     lady_brown.start();  // Start the control task
@@ -855,7 +919,13 @@ void initialize() {
 
     side_encoder.set_reversed(true);
 
-	// autonomous() // For outside of competition testing purposes
+    route = readRouteFile(route_name);
+    // route = weird;
+    if (route.empty()) {
+        logger->log("Error: Route file is empty or could not be opened.");
+        return;
+    }
+
     logger->log("Robot initialized");
 }
 
@@ -910,6 +980,7 @@ void autonomous() {
         // left_mg.move_velocity(test_vel);
         // right_mg.move_velocity(test_vel);
         // PID_controller();
+        // PIDTurn(180.0);
         followTrajectory(route, odometry, ramsete, drivetrain, left_mg, right_mg);
         // collect_velocity_vs_voltage_data();
         // collect_velocity_vs_constant_voltage_data();
@@ -940,9 +1011,7 @@ void opcontrol() {
     printf("Starting opcontrol\n");
     lady_brown.setState(4); // Set to manual control
     bool manual_control = false;
-    pros::lcd::print(5, "hallo");
     // Odometry odometry(left_mg, right_mg, side_encoder, imu_sensor, WHEEL_BASE_WIDTH, 3.0, false, true, false); // 2.419
-    pros::lcd::print(4, "hai");
     Pose new_pos = {0, 0, 0};
     double left_pos = 0;
     double right_pos = 0;
@@ -954,14 +1023,12 @@ void opcontrol() {
     // odometry.setPose(new_pos);
 
     pros::Motor lb = lady_brown.getMotor();
+    bool lower_intake_state = false;
 	while (true) {
 		// Arcade control scheme
-        // double hue = optical_sensor.get_hue();
 
-        // pros::lcd::print(0, "Hue: %f", hue);
-        pros::lcd::print(3, "Got here");
         // odometry.update();
-        pros::lcd::print(4, "odom here");
+
         // Pose current_pose = odometry.getPose();
         // pros::lcd::print(1, "Current pose: %f %f %f", current_pose.x, current_pose.y, current_pose.theta);
 		int dir = (master.get_analog(ANALOG_LEFT_Y));    // Gets amount forward/backward from left joystick
@@ -977,13 +1044,22 @@ void opcontrol() {
         }
         else if (master.get_digital(DIGITAL_R2)) {
             intake.move_voltage(-12000);
-        } else if (master.get_digital(DIGITAL_A)) {
-            upper_intake.move_voltage(0);
-            lower_intake.move_voltage(12000);
+        } else if (master.get_digital_new_press(DIGITAL_A)) {
+            if (lower_intake_state){
+                upper_intake.move_voltage(0);
+                lower_intake.move_voltage(0);
+            } else {
+                upper_intake.move_voltage(0);
+                lower_intake.move_voltage(12000);
+            }
+            lower_intake_state = !lower_intake_state;
         }
-        else {
+        else if (!lower_intake_state){
             intake.move_voltage(0);
+        } else {
+            upper_intake.move_voltage(0);
         }
+        
 
         bool old_state = mogo_mech.get_state();
         mogo_mech.input_toggle(master.get_digital(DIGITAL_L1));
@@ -1042,6 +1118,6 @@ void opcontrol() {
 
         pros::lcd::print(0, "Left pos: %f, Right pos: %f", left_pos, right_pos);
 
-		pros::delay(20);                               // Run for 20 ms then update
-	}
+        pros::delay(20);                               // Run for 20 ms then update
+    }
 }

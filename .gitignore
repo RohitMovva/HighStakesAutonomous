@@ -9,6 +9,8 @@
 # PROS
 bin/
 .vscode/
+.VSCodeCounter/
+routes/
 .cache/
 compile_commands.json
 temp.log
